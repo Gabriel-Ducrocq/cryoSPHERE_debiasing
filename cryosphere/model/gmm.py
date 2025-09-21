@@ -29,12 +29,12 @@ class Gaussian_splatting(torch.nn.Module):
         sigmas: torch.tensor(N_residues, 3)
         amplitudes: torch.tensor(N_residues, 1)
         """
-        self.mus = torch.nn.Parameters(data=mus, requires_grad = True)
-        self.amplitudes = torch.nn.Parameters(data= amplitudes, requires_grad = True)
-        self.S = torch.nn.Parameters(data= sigmas, requires_grad = True)
+        self.mus = torch.nn.Parameter(data=mus, requires_grad = True)
+        self.amplitudes = torch.nn.Parameter(data= amplitudes, requires_grad = True)
+        self.S = torch.nn.Parameter(data= sigmas, requires_grad = True)
         self.quaternions = torch.zeros(self.mus.shape[0], 4)
         self.quaternions[:, -1] = 1
-        self.quaternions = torch.nn.Parameters(data= self.quaternions, requires_grad = True)
+        self.quaternions = torch.nn.Parameter(data= self.quaternions, requires_grad = True)
 
     def compute_R(self):
         """

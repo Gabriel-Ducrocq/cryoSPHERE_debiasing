@@ -302,10 +302,6 @@ def parse_yaml(path, gpu_id, analyze=False):
             list_param.append({"params": segmenter.parameters(), "lr":experiment_settings["optimizer"]["learning_rate"]})
             optimizer = torch.optim.Adam(list_param)
         else:
-            list_param = [{"params": param, "lr":experiment_settings["optimizer"]["learning_rate_segmentation"]} for name, param in
-                          segmenter.named_parameters() if "segments" in name]
-            list_param.append({"params": vae.encoder.parameters(), "lr":experiment_settings["optimizer"]["learning_rate"]})
-            list_param.append({"params": vae.decoder.parameters(), "lr":experiment_settings["optimizer"]["learning_rate"]})
             list_param.append({"params": gmm_repr.parameters(), "lr":experiment_settings["optimizer"]["learning_rate_splatting"]})
             if not amortized:
                 list_param.append({"params": vae.latent_variables_mean, "lr":experiment_settings["optimizer"]["learning_rate"]})
@@ -377,7 +373,8 @@ def parse_yaml(path, gpu_id, analyze=False):
 
 
 
-
+    vae.eval()
+    segmenter.eval()
     return vae, image_translator, ctf_experiment, grid, gmm_repr, optimizer, dataset, N_epochs, batch_size, experiment_settings, device, \
     scheduler, base_structure, lp_mask2d, mask, amortized, path_results, structural_loss_parameters, segmenter
 
