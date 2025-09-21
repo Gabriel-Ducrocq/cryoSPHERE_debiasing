@@ -1,3 +1,4 @@
+import roma
 import torch
 import numpy as np
 from typing import Union
@@ -10,6 +11,57 @@ class Gaussian:
     mus: Union[torch.Tensor, np.ndarray]
     sigmas: Union[torch.Tensor, np.ndarray]
     amplitudes: Union[torch.Tensor, np.ndarray]
+
+class Gaussian_splatting(torch.nn.Module):
+    """
+    Object containing the parameters of the GMM representation of the protein:
+    - the Gaussian means
+    - the initial Gaussian standard deviations
+    - the initial amplitudes
+    We will learn the Gaussian standard deviations and initial amplitudes as part of the Gaussian splatting process.
+    """
+    def __init__(self, mus, sigmas, amplitudes):
+        """
+        Initialize the GMM representation of the protein, definining the means, amplitudes, R and S matrices of the
+        Gaussians so that Sigma = RSSR^T
+        The normal matrix R is represented as a quaternion.
+        mus: torch.tensor(N_residues, 3)
+        sigmas: torch.tensor(N_residues, 3)
+        amplitudes: torch.tensor(N_residues, 1)
+        """
+        self.mus = torch.nn.Parameters(data=mus, requires_grad = True)
+        self.amplitudes = torch.nn.Parameters(data= amplitudes, requires_grad = True)
+        self.S = torch.nn.Parameters(data= sigmas, requires_grad = True)
+        self.quaternions = torch.zeros(self.mus.shape[0], 4)
+        self.quaternions[:, -1] = 1
+        self.quaternions = torch.nn.Parameters(data= self.quaternions, requires_grad = True)
+
+    def compute_R(self):
+        """
+        Computes the R matrix for each residue
+        return: torch.tensor(N_residues, 3, 3)
+        """
+        R = roma.unitquat_to_rotmat(self.quaternions)
+        return R
+
+    def get_S(self):
+        """
+        Return the diagonal elements of the S matrix
+        return: torch.tensor(N_residues, 3)
+        """
+        return self.S
+
+    def compute_precision_matrices(self):
+        """
+        Compute the precision matrices based on R an S for each residue
+        return: torch.tensor(N_residues, 3, 3) precision matrices for each residue
+        """
+        R = self.compute_R()
+        S = self.get_S()
+        RS = R*S[:, None, :]
+        return torch.einsum("rij, rlj -> ril", RS, RS)
+
+
 
 
 

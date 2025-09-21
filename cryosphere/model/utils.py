@@ -26,7 +26,7 @@ from biotite.structure.io.pdb import PDBFile
 from cryosphere.model.polymer import Polymer
 from torch.distributed import init_process_group
 from cryosphere.model.dataset import ImageDataSet
-from cryosphere.model.gmm import Gaussian, EMAN2Grid
+from cryosphere.model.gmm import Gaussian, EMAN2Grid, Gaussian_splatting
 from cryosphere.model.segmentation import Segmentation
 #from pytorch3d.transforms import quaternion_to_axis_angle, axis_angle_to_matrix, axis_angle_to_quaternion, quaternion_apply
 from cryosphere.model.loss import compute_loss, find_range_cutoff_pairs, remove_duplicate_pairs, find_continuous_pairs, calc_dist_by_pair_indices
@@ -66,6 +66,45 @@ def fourier2d_to_primal(fourier_images):
     f = torch.fft.ifftshift(fourier_images, dim=(-2, -1))
     r = torch.fft.fftshift(torch.fft.ifft2(f, dim=(-2, -1), s=(f.shape[-2], f.shape[-1])),dim=(-2, -1)).real
     return r
+
+
+def rotate_rotation_matrix(rotation_matrices, covariance_matrices):
+    """
+    Compute the covariance matrix of the Gaussian in a rotated basis
+    :param rotation_matrices: torch.tensor(N_batch, 3, 3)
+    :param covariance_matrices: torch.tensor(N_batch, N_residues, 3, 3)
+    return: torch.tensor(N_batch, N_residues, 3, 3) covariance matrices in the new rotated basis
+    """
+    left_multiplied = torch.einsum("bij, bajk -> baik", rotation_matrices, covariance_matrices)
+    rotated_covariances = torch.einsum("baik, bakj -> baij", left_multiplied, rotation_matrices)
+    return rotated_covariances
+
+
+def compute_precision_matrix(R, S, epsilon= 1e-10):
+    """
+    Computes the precision matrix of a covariance matrix written RSSR^T
+    R: torch.tensor(N_residues, 3, 3) normal matrices
+    S: torch.tensor(N_residues, 3) diagonal elements of the square root of the diagonal matrix
+    return torch.tensor(N_residues, 3, 3)
+    """
+    RS_inv = torch.eisum("rij, rjk -> rik", R, torch.diag_embed(1/(S+epsilon)))
+    return torch.einsum("rij, rlj -> ril", RS_inv, RS_inv)
+
+def compute_rotated_precision_matrix(rotation_matrices, R, S, epsilon= 1e-10):
+    """
+    Computes the precision matrix of a covariance matrix written RSSR^T rotated by a rotation_matrices matrix Sigma
+    Note that since we rotate each residue differently as part of the segment moving, we get a different rotation matrix
+    for each residue and each batch sample.
+    rotation_matrices: torch.tensor(batch_size, N_residues, 3, 3) rotation matrices
+    R: torch.tensor(N_residues, 3, 3) normal matrices
+    S: torch.tensor(N_residues, 3) diagonal elements of the square root of the diagonal matrix
+    return torch.tensor(N_residues, 3, 3)
+    """
+    SigmaRS_inv = torch.einsum("brij, rjl, rlm -> brim", rotation_matrices, R, torch.diag_embed(1/(S+epsilon)))
+    return torch.einsum("brij, brlj -> bril", SigmaRS_inv, SigmaRS_inv)
+
+
+
 
 class Mask(torch.nn.Module):
 
@@ -242,8 +281,8 @@ def parse_yaml(path, gpu_id, analyze=False):
     base_structure_path = os.path.join(folder_path, experiment_settings["base_structure_path"])
     base_structure = Polymer.from_pdb(base_structure_path)
     amplitudes = torch.tensor(base_structure.num_electron, dtype=torch.float32, device=device)[:, None]
-    gmm_repr = Gaussian(torch.tensor(base_structure.coord, dtype=torch.float32, device=device), 
-                torch.ones((base_structure.coord.shape[0], 1), dtype=torch.float32, device=device)*image_settings["sigma_gmm"], 
+    gmm_repr = Gaussian_splatting(torch.tensor(base_structure.coord, dtype=torch.float32, device=device),
+                torch.ones((base_structure.coord.shape[0], 3), dtype=torch.float32, device=device)*image_settings["sigma_gmm"],
                 amplitudes)
     residues_chain = base_structure.chain_id
     residues_indexes = np.array([i for i in range(len(residues_chain))])
@@ -267,6 +306,7 @@ def parse_yaml(path, gpu_id, analyze=False):
                           segmenter.named_parameters() if "segments" in name]
             list_param.append({"params": vae.encoder.parameters(), "lr":experiment_settings["optimizer"]["learning_rate"]})
             list_param.append({"params": vae.decoder.parameters(), "lr":experiment_settings["optimizer"]["learning_rate"]})
+            list_param.append({"params": gmm_repr.parameters(), "lr":experiment_settings["optimizer"]["learning_rate_splatting"]})
             if not amortized:
                 list_param.append({"params": vae.latent_variables_mean, "lr":experiment_settings["optimizer"]["learning_rate"]})
 
@@ -508,6 +548,31 @@ def rotate_residues_einops(atom_positions, quaternions, segmentation, device):
 
     return atom_positions
 
+def rotate_precisions(R_quat, S, quaternions, segmentation, epsilon=1e-10):
+    """
+    Similar as rotate_residues_einops function except that we rotate the precision matrices corresponding to each residue
+    :param R_quat: torch.tensor(N_residues, 4) normal matrices such that Cov = RSS^T represented as quaternions.
+    :param S: torch.tensor(N_residues, 3) diagonal of the S matrices such that Cov = RSSR^T
+    :param quaternions: tensor (N_batch, N_segments, 4) of non normalized quaternions defining rotations
+    :param segmentation: tensor (N_batch, N_residues, N_segments)
+    :return: tensor (N_batch, N_residues, 3, 3) rotated precision matrix
+    """
+    # NOTE: no need to normalize the quaternions, quaternion_to_axis does it already.
+    rotation_per_segments_axis_angle = unitquat_to_rotvec(quaternions[:, :, [1, 2, 3, 0]])
+    #The below tensor is [N_batch, N_residues, N_segments, 3]
+    segmentation_rotation_per_segments_axis_angle = segmentation[:, :, :, None] * rotation_per_segments_axis_angle[:, None, :, :]
+    #The below tensor is [N_batch, N_residues, N_segments, 4] with the real part as the last element from now on !!!!!
+    segmentation_rotation_per_segments_quaternions = rotvec_to_unitquat(segmentation_rotation_per_segments_axis_angle)
+    segmentation_rotation_per_segments_quaternions = torch.einsum("brsi -> sbri", segmentation_rotation_per_segments_quaternions)
+    #quaternions_composed is [N_batch, N_residues, 4]
+    quaternions_composed = roma.quat_composition(segmentation_rotation_per_segments_quaternions, normalize=True)
+    quaternions_composed = roma.quat_composition(quaternions_composed, R_quat[None, :, :], normalize=True)
+    #rotmat_composed is [N_batch, N_residues, 3, 3]
+    rotmat_composed = roma.unitquat_to_rotmat(quaternions_composed)
+    rotmat_composed *= 1/(S[:, None, :] + epsilon)
+    return torch.einsum("brij, brlj -> bril", rotmat_composed, rotmat_composed)
+
+
 def compute_translations_per_residue(translation_vectors, segmentations, N_residues, batch_size, device):
     """
     Computes one translation vector per residue based on the segmentation
@@ -525,10 +590,10 @@ def compute_translations_per_residue(translation_vectors, segmentations, N_resid
 
     return translation_per_residue
 
-def deform_structure(atom_positions, translation_per_residue, quaternions, segmentations, device):
+def deform_structure(gmm_repr, translation_per_residue, quaternions, segmentations, device):
     """
     Deform the base structure according to rotations and translation of each segment, together with the segmentation.
-    :param atom_positions: torch.tensor(N_residues, 3)
+    :param gmm_repr: object of type Gaussian_splatting
     :param translation_per_residue: tensor (Batch_size, N_residues, 3)
     :param quaternions: tensor (N_batch, N_segments, 4) of quaternions for the rotation of the segments
     :param segmentations: dictionnary of torch.tensor(N_batch, N_residues, N_segments) representing the weights of the segmentation 
@@ -537,12 +602,16 @@ def deform_structure(atom_positions, translation_per_residue, quaternions, segme
     :return: tensor (Batch_size, N_residues, 3) corresponding to translated structure
     """
     batch_size = translation_per_residue.shape[0]
+    atom_positions = gmm_repr.mus
     transformed_atom_positions = atom_positions[None, :, :].repeat((batch_size, 1, 1))
+    transformed_precision_matrices = gmm_repr.compute_precision_matrices().repeat((batch_size, 1, 1, 1))
     for part, segm in segmentations.items():
         transformed_atom_positions[:, segm["mask"]==1]  = rotate_residues_einops(atom_positions[segm["mask"]==1] , quaternions[part], segm["segmentation"], device)
+        transformed_precision_matrices[:, segm["mask"]==1] = rotate_precisions(gmm_repr.quaternions, gmm_repr.get_S(),
+                                                                               quaternions[part], segm["segmentation"])
 
     new_atom_positions = transformed_atom_positions + translation_per_residue
-    return new_atom_positions
+    return new_atom_positions, transformed_precision_matrices
 
 
 

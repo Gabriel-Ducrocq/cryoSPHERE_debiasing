@@ -25,6 +25,28 @@ def fourier2d_to_primal(fourier_images):
     r = torch.fft.fftshift(torch.fft.ifft2(f, dim=(-2, -1), s=(f.shape[-2], f.shape[-1])),dim=(-2, -1)).real
     return r
 
+def project_non_diagonal_gaussian(Gauss_mean_2d, Gauss_precisions_2d, Gauss_amplitudes, grid):
+    """
+    Projects a volume represented by a GMM with non diagonal covariances by integrating along the z axis. Note that in
+    the case of non diagonal covariance, we cannot use the trick of computing for each axis separately and then taking
+    the outer product of the two computed axis.
+    Gauss_mean_2d: torch.tensor(batch_size, N_atoms, 2) of structures.
+    Gauss_precisions_2d: torch.tensor(batch_size, N_atoms, 2, 2) of precision matrices for the Gaussian kernel.
+    Gauss_covariances_2d: torch.tensor(batch_size, N_atoms, 2, 2) of covariances matrices for the Gaussian kernel.
+    Gauss_amplitudes: torch.tensor(N_atoms, 1) of coefficients used to scale the Gausian kernels.
+    grid: grid object
+    return images: torch.tensor(batch_size, N_pix, N_pix)
+    """
+    batch_size = Gauss_mean_2d.shape[0]
+    plane_coord = grid.plane_coords
+    diff = (Gauss_mean[:, :, None, :] - plane_coord[None, None, :, :])
+    first_product = torch.einsum("bapk, bapkl ->bapl", diff, Gauss_precisions_2d)
+    #exponential is a tensor of size (batch_size, N_residues, N_pix**2)
+    exponential = torch.exp(-0.5*torch.einsum("bapl, bapl -> bap", first_product, diff))*Gauss_amplitudes[None, :, None]
+    images = torch.einsum("bap -> bp", exponential)
+    return images.reshape(batch_size, grid.side_n_pixels, grid.side_n_pixels)
+
+
 
 def project(Gauss_mean, Gauss_sigmas, Gauss_amplitudes, grid):
     """
@@ -62,15 +84,18 @@ def structure_to_volume(Gauss_means, Gauss_sigmas, Gauss_amplitudes, grid, devic
     return volumes
 
 
-def rotate_structure(Gauss_mean, rotation_matrices):
+def rotate_structure(Gauss_mean, precision_matrices, rotation_matrices):
     """
     Rotate a structure to obtain a posed structure.
-    Gauss_mean: torch.tensor(batch_size, N_atoms, 3) of atom positions
+    Gauss_mean: torch.tensor(batch_size, N_residues, 3) of atom positions
+    precision_matrices: torch.tensor(batch_size, N_residues, 3, 3) of precision matrices for the GMM representation of the protein.
     rotation_matrices: torch.tensor(batch_size, 3, 3) of rotation_matrices
     return rotated_Gauss_mean: torch.tensor(batch_size, N_atoms, 3)
     """
     rotated_Gauss_mean = torch.einsum("b l k, b a k -> b a l", rotation_matrices, Gauss_mean)
-    return rotated_Gauss_mean
+    left_mult = torch.einsum("b l k, b r k m -> brlm", rotation_matrices, precision_matrices)
+    rotated_precisions = torch.einsum("brij, brlj -> bril", left_mult, precision_matrices)
+    return rotated_Gauss_mean, rotated_precisions
 
 
 def translate_structure(Gauss_mean, translation_vectors):
