@@ -81,9 +81,12 @@ def start_training(vae, image_translator, ctf, grid, gmm_repr, optimizer, datase
             loss = compute_loss(batch_predicted_images, lp_batch_translated_images, None, latent_mean, latent_std, vae.module, segmenter.module, experiment_settings, tracking_metrics,
                 structural_loss_parameters= structural_loss_parameters, epoch=epoch, predicted_structures=predicted_structures, device=gpu_id)
 
+            start = time()
             loss.backward()
             optimizer.step()
             optimizer.zero_grad()
+            end = time()
+            print("Time to Gradient computing", end - start)
             end_batch = time()
             print("Time to batch", end_batch - start_batch)
 
