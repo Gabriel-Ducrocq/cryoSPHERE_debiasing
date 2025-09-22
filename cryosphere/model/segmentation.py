@@ -12,18 +12,18 @@ def compute_segmentation_prior(N_residues, N_segments, start_residue, device):
     :return: dict of means and std for each prior over the parameters of the GMM.
     """
     bound_0 = N_residues / N_segments
-    segmentation_means_mean = torch.Tensor(np.array([bound_0 / 2 + i * bound_0 for i in range(N_segments)]), dtype=torch.float32,
+    segmentation_means_mean = torch.tensor(np.array([bound_0 / 2 + i * bound_0 for i in range(N_segments)]), dtype=torch.float32,
                           device=device)[None, :]
 
-    segmentation_means_std = torch.Tensor(np.ones(N_segments) * 10.0, dtype=torch.float32, device=device)[None, :]
+    segmentation_means_std = torch.tensor(np.ones(N_segments) * 10.0, dtype=torch.float32, device=device)[None, :]
 
-    segmentation_stds_mean = torch.Tensor(np.ones(N_segments) * bound_0, dtype=torch.float32, device=device)[None, :]
+    segmentation_stds_mean = torch.tensor(np.ones(N_segments) * bound_0, dtype=torch.float32, device=device)[None, :]
 
-    segmentation_stds_std = torch.Tensor(np.ones(N_segments) * 10.0, dtype=torch.float32, device=device)[None, :]
+    segmentation_stds_std = torch.tensor(np.ones(N_segments) * 10.0, dtype=torch.float32, device=device)[None, :]
 
-    segmentation_proportions_mean = torch.Tensor(np.ones(N_segments) * 0, dtype=torch.float32, device=device)[None, :]
+    segmentation_proportions_mean = torch.tensor(np.ones(N_segments) * 0, dtype=torch.float32, device=device)[None, :]
 
-    segmentation_proportions_std = torch.Tensor(np.ones(N_segments), dtype=torch.float32, device=device)[None, :]
+    segmentation_proportions_std = torch.tensor(np.ones(N_segments), dtype=torch.float32, device=device)[None, :]
 
     segmentation_prior = {}
     segmentation_prior["means"] = {"mean":segmentation_means_mean, "std":segmentation_means_std}
@@ -54,7 +54,7 @@ class Segmentation(torch.nn.Module):
 		self.segments_proportions_means = torch.nn.ParameterDict({})
 		self.segments_proportions_stds = torch.nn.ParameterDict({})
 		self.tau_segmentation = tau_segmentation
-		self.residues_indexes = torch.Tensor(residues_indexes, dtype=torch.float32, device=device)[:, None]
+		self.residues_indexes = torch.tensor(residues_indexes, dtype=torch.float32, device=device)[:, None]
 		self.residues_chain = residues_chain
 		self.device = device
 		self.elu = torch.nn.ELU()
@@ -75,44 +75,44 @@ class Segmentation(torch.nn.Module):
 			if "segmentation_start_values" not in part_config:
 				#Initialize the segmentation in a uniform way
 				bound_0 = N_res/N_segments
-				self.segments_means_means[part]= torch.nn.Parameter(data=torch.Tensor(np.array([start_res + bound_0/2 + i*bound_0 for i in range(N_segments)]), dtype=torch.float32, device=device)[None, :],
+				self.segments_means_means[part]= torch.nn.Parameter(data=torch.tensor(np.array([start_res + bound_0/2 + i*bound_0 for i in range(N_segments)]), dtype=torch.float32, device=device)[None, :],
 				                                          requires_grad=True)
-				self.segments_means_stds[part] = torch.nn.Parameter(data= torch.Tensor(np.ones(N_segments)*10.0, dtype=torch.float32, device=device)[None,:],
+				self.segments_means_stds[part] = torch.nn.Parameter(data= torch.tensor(np.ones(N_segments)*10.0, dtype=torch.float32, device=device)[None,:],
 				                                        requires_grad=True)
 
-				self.segments_stds_means[part] = torch.nn.Parameter(data= torch.Tensor(np.ones(N_segments)*bound_0, dtype=torch.float32, device=device)[None,:],
+				self.segments_stds_means[part] = torch.nn.Parameter(data= torch.tensor(np.ones(N_segments)*bound_0, dtype=torch.float32, device=device)[None,:],
 				                                        requires_grad=True)
 
 				self.segments_stds_stds[part] = torch.nn.Parameter(
-				    data=torch.Tensor(np.ones(N_segments) * 10.0, dtype=torch.float32, device=device)[None, :],
+				    data=torch.tensor(np.ones(N_segments) * 10.0, dtype=torch.float32, device=device)[None, :],
 				    requires_grad=True)
 
 				self.segments_proportions_means[part] = torch.nn.Parameter(
-				    data=torch.Tensor(np.ones(N_segments) * 0, dtype=torch.float32, device=device)[None, :],
+				    data=torch.tensor(np.ones(N_segments) * 0, dtype=torch.float32, device=device)[None, :],
 				    requires_grad=True)
 
 				self.segments_proportions_stds[part] = torch.nn.Parameter(
-				    data=torch.Tensor(np.ones(N_segments), dtype=torch.float32, device=device)[None, :],
+				    data=torch.tensor(np.ones(N_segments), dtype=torch.float32, device=device)[None, :],
 				    requires_grad=True)
 
 			else:
 				#Otherwise take the definitions of the segments
-				self.segments_means_means[part] = torch.nn.Parameter(data = torch.Tensor(np.array(part_config["segmentation_start_values"]["means_means"]), 
+				self.segments_means_means[part] = torch.nn.Parameter(data = torch.tensor(np.array(part_config["segmentation_start_values"]["means_means"]),
 													dtype=torch.float32, device=device), requires_grad=True)
 
-				self.segments_means_stds[part] = torch.nn.Parameter(data = torch.Tensor(np.array(part_config["segmentation_start_values"]["means_stds"]), 
+				self.segments_means_stds[part] = torch.nn.Parameter(data = torch.tensor(np.array(part_config["segmentation_start_values"]["means_stds"]),
 													dtype=torch.float32, device=device), requires_grad=True)
 
-				self.segments_stds_means[part] = torch.nn.Parameter(data = torch.Tensor(np.array(part_config["segmentation_start_values"]["stds_means"]), 
+				self.segments_stds_means[part] = torch.nn.Parameter(data = torch.tensor(np.array(part_config["segmentation_start_values"]["stds_means"]),
 													dtype=torch.float32, device=device), requires_grad=True)
 
-				self.segments_stds_stds[part] = torch.nn.Parameter(data = torch.Tensor(np.array(part_config["segmentation_start_values"]["stds_stds"]), 
+				self.segments_stds_stds[part] = torch.nn.Parameter(data = torch.tensor(np.array(part_config["segmentation_start_values"]["stds_stds"]),
 													dtype=torch.float32, device=device), requires_grad=True)
 
-				self.segments_proportions_means[part] = torch.nn.Parameter(data = torch.Tensor(np.array(part_config["segmentation_start_values"]["proportions_means"]), 
+				self.segments_proportions_means[part] = torch.nn.Parameter(data = torch.tensor(np.array(part_config["segmentation_start_values"]["proportions_means"]),
 													dtype=torch.float32, device=device), requires_grad=True)
 
-				self.segments_proportions_stds[part] = torch.nn.Parameter(data = torch.Tensor(np.array(part_config["segmentation_start_values"]["proportions_stds"]), 
+				self.segments_proportions_stds[part] = torch.nn.Parameter(data = torch.tensor(np.array(part_config["segmentation_start_values"]["proportions_stds"]),
 													dtype=torch.float32, device=device), requires_grad=True)
 
 			self.segmentation_prior = {}
@@ -132,13 +132,13 @@ class Segmentation(torch.nn.Module):
 						N_res = end_res - start_res + 1
 
 					bound_0 = N_res / N_segments
-					segmentation_means_mean = torch.Tensor(np.array([start_res + bound_0 / 2 + i * bound_0 for i in range(N_segments)]), dtype=torch.float32,
+					segmentation_means_mean = torch.tensor(np.array([start_res + bound_0 / 2 + i * bound_0 for i in range(N_segments)]), dtype=torch.float32,
 					          device=device)[None, :]
-					segmentation_means_std = torch.Tensor(np.ones(N_segments) * 10.0, dtype=torch.float32, device=device)[None, :]
-					segmentation_stds_mean = torch.Tensor(np.ones(N_segments) * bound_0, dtype=torch.float32, device=device)[None, :]
-					segmentation_stds_std = torch.Tensor(np.ones(N_segments) * 10.0, dtype=torch.float32, device=device)[None, :]
-					segmentation_proportions_mean = torch.Tensor(np.ones(N_segments) * 0, dtype=torch.float32, device=device)[None, :]
-					segmentation_proportions_std = torch.Tensor(np.ones(N_segments), dtype=torch.float32, device=device)[None, :]
+					segmentation_means_std = torch.tensor(np.ones(N_segments) * 10.0, dtype=torch.float32, device=device)[None, :]
+					segmentation_stds_mean = torch.tensor(np.ones(N_segments) * bound_0, dtype=torch.float32, device=device)[None, :]
+					segmentation_stds_std = torch.tensor(np.ones(N_segments) * 10.0, dtype=torch.float32, device=device)[None, :]
+					segmentation_proportions_mean = torch.tensor(np.ones(N_segments) * 0, dtype=torch.float32, device=device)[None, :]
+					segmentation_proportions_std = torch.tensor(np.ones(N_segments), dtype=torch.float32, device=device)[None, :]
 					self.segmentation_prior[part]["means"] = {"mean":segmentation_means_mean, "std":segmentation_means_std}
 					self.segmentation_prior[part]["stds"] = {"mean":segmentation_stds_mean, "std":segmentation_stds_std}
 					self.segmentation_prior[part]["proportions"] = {"mean":segmentation_proportions_mean, "std":segmentation_proportions_std}
