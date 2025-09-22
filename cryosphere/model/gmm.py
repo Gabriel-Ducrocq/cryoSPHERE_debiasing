@@ -33,7 +33,7 @@ class Gaussian_splatting(torch.nn.Module):
         self.mus = torch.nn.Parameter(data=mus, requires_grad = True)
         self.amplitudes = torch.nn.Parameter(data= amplitudes, requires_grad = True)
         self.S = torch.nn.Parameter(data= sigmas, requires_grad = True)
-        self.quaternions = torch.zeros(self.mus.shape[0], 4)
+        self.quaternions = torch.zeros(self.mus.shape[0], 4, device=self.mus.get_device())
         self.quaternions[:, -1] = 1
         self.quaternions = torch.nn.Parameter(data= self.quaternions, requires_grad = True)
 
