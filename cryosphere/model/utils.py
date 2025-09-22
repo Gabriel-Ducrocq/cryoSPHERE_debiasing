@@ -561,7 +561,7 @@ def rotate_precisions(R_quat, S, quaternions, segmentation, epsilon=1e-10):
     segmentation_rotation_per_segments_quaternions = torch.einsum("brsi -> sbri", segmentation_rotation_per_segments_quaternions)
     #quaternions_composed is [N_batch, N_residues, 4]
     quaternions_composed = roma.quat_composition(segmentation_rotation_per_segments_quaternions, normalize=True)
-    quaternions_composed = roma.quat_composition(quaternions_composed, R_quat[None, :, :], normalize=True)
+    quaternions_composed = roma.quat_composition([quaternions_composed, R_quat[None, :, :]], normalize=True)
     #rotmat_composed is [N_batch, N_residues, 3, 3]
     rotmat_composed = roma.unitquat_to_rotmat(quaternions_composed)
     rotmat_composed *= 1/(S[:, None, :] + epsilon)
