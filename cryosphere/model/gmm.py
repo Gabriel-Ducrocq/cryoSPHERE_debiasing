@@ -29,6 +29,7 @@ class Gaussian_splatting(torch.nn.Module):
         sigmas: torch.tensor(N_residues, 3)
         amplitudes: torch.tensor(N_residues, 1)
         """
+        super().__init__()
         self.mus = torch.nn.Parameter(data=mus, requires_grad = True)
         self.amplitudes = torch.nn.Parameter(data= amplitudes, requires_grad = True)
         self.S = torch.nn.Parameter(data= sigmas, requires_grad = True)
