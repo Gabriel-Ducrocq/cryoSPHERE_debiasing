@@ -81,10 +81,11 @@ def start_training(vae, image_translator, ctf, grid, gmm_repr, optimizer, datase
                     optimizer.step()
                     optimizer.zero_grad()
 
+                    break
+
                 if scheduler:
                     scheduler.step()
 
-                    break
 
 
         break
