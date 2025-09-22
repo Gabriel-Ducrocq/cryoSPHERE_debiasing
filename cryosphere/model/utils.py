@@ -302,10 +302,8 @@ def parse_yaml(path, gpu_id, analyze=False):
             list_param.append({"params": segmenter.parameters(), "lr":experiment_settings["optimizer"]["learning_rate"]})
             optimizer = torch.optim.Adam(list_param)
         else:
+            list_param = []
             list_param.append({"params": gmm_repr.parameters(), "lr":experiment_settings["optimizer"]["learning_rate_splatting"]})
-            if not amortized:
-                list_param.append({"params": vae.latent_variables_mean, "lr":experiment_settings["optimizer"]["learning_rate"]})
-
             optimizer = torch.optim.Adam(list_param)
     else:
         raise Exception("Optimizer must be Adam")
