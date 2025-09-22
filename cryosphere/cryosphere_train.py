@@ -68,7 +68,7 @@ def start_training(vae, image_translator, ctf, grid, gmm_repr, optimizer, datase
             translation_per_residue = model.utils.compute_translations_per_residue(translations_per_domain, segmentation, base_structure.coord.shape[0], batch_size, gpu_id)
             predicted_structures, transformed_precision_matrices = model.utils.deform_structure(gmm_repr, translation_per_residue, quaternions_per_domain, segmentation, gpu_id)
             posed_predicted_structures, rotated_precisions = renderer.rotate_structure(predicted_structures,transformed_precision_matrices, batch_poses)
-            predicted_images = renderer.project_non_diagonal_gaussian(posed_predicted_structures[:, :, 2], rotated_precisions[:, :, :2, :2], gmm_repr.amplitudes, grid)
+            predicted_images = renderer.project_non_diagonal_gaussian(posed_predicted_structures[:, :, :2], rotated_precisions[:, :, :2, :2], gmm_repr.amplitudes, grid)
             batch_predicted_images = renderer.apply_ctf(predicted_images, ctf, indexes)/dataset.f_std
             loss = compute_loss(batch_predicted_images, lp_batch_translated_images, None, latent_mean, latent_std, vae.module, segmenter.module, experiment_settings, tracking_metrics, 
                 structural_loss_parameters= structural_loss_parameters, epoch=epoch, predicted_structures=predicted_structures, device=gpu_id)
