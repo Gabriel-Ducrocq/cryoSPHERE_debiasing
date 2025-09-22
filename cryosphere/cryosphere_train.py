@@ -16,6 +16,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from cryosphere.model.utils import low_pass_images, ddp_setup
 from torch.distributed import destroy_process_group
 from cryosphere.model.loss import compute_loss, find_range_cutoff_pairs, remove_duplicate_pairs, find_continuous_pairs, calc_dist_by_pair_indices
+from torch.profiler import profile, record_function, ProfilerActivity
 
 
 import matplotlib.pyplot as plt
@@ -50,38 +51,46 @@ def start_training(vae, image_translator, ctf, grid, gmm_repr, optimizer, datase
         start_tot = time()
         data_loader.sampler.set_epoch(epoch) 
         data_loader = tqdm(iter(data_loader))
-        for batch_num, (indexes, batch_images, batch_poses, batch_poses_translation, _) in enumerate(data_loader):
-            batch_images = batch_images.to(gpu_id)
-            batch_poses = batch_poses.to(gpu_id)
-            batch_poses_translation = batch_poses_translation.to(gpu_id)
-            indexes = indexes.to(gpu_id)
-            flattened_batch_images = batch_images.flatten(start_dim=-2)
-            batch_translated_images = image_translator.transform(batch_images, batch_poses_translation[:, None, :])
-            lp_batch_translated_images = low_pass_images(batch_translated_images, lp_mask2d)
-            if amortized:
-                latent_variables, latent_mean, latent_std = vae.module.sample_latent(flattened_batch_images)
-            else:
-                latent_variables, latent_mean, latent_std = vae.module.sample_latent(None, indexes)
+        with profile(activities=[
+            ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True) as prof:
+            with record_function("model_inference"):
+                for batch_num, (indexes, batch_images, batch_poses, batch_poses_translation, _) in enumerate(data_loader):
+                    batch_images = batch_images.to(gpu_id)
+                    batch_poses = batch_poses.to(gpu_id)
+                    batch_poses_translation = batch_poses_translation.to(gpu_id)
+                    indexes = indexes.to(gpu_id)
+                    flattened_batch_images = batch_images.flatten(start_dim=-2)
+                    batch_translated_images = image_translator.transform(batch_images, batch_poses_translation[:, None, :])
+                    lp_batch_translated_images = low_pass_images(batch_translated_images, lp_mask2d)
+                    if amortized:
+                        latent_variables, latent_mean, latent_std = vae.module.sample_latent(flattened_batch_images)
+                    else:
+                        latent_variables, latent_mean, latent_std = vae.module.sample_latent(None, indexes)
 
-            segmentation = segmenter.module.sample_segments(batch_images.shape[0])
-            quaternions_per_domain, translations_per_domain = vae.module.decode(latent_variables)
-            translation_per_residue = model.utils.compute_translations_per_residue(translations_per_domain, segmentation, base_structure.coord.shape[0], batch_size, gpu_id)
-            predicted_structures, transformed_precision_matrices = model.utils.deform_structure(gmm_repr, translation_per_residue, quaternions_per_domain, segmentation, gpu_id)
-            posed_predicted_structures, rotated_precisions = renderer.rotate_structure(predicted_structures,transformed_precision_matrices, batch_poses)
-            predicted_images = renderer.project_non_diagonal_gaussian(posed_predicted_structures[:, :, :2], rotated_precisions[:, :, :2, :2], gmm_repr.amplitudes, grid)
-            batch_predicted_images = renderer.apply_ctf(predicted_images, ctf, indexes)/dataset.f_std
-            loss = compute_loss(batch_predicted_images, lp_batch_translated_images, None, latent_mean, latent_std, vae.module, segmenter.module, experiment_settings, tracking_metrics, 
-                structural_loss_parameters= structural_loss_parameters, epoch=epoch, predicted_structures=predicted_structures, device=gpu_id)
+                    segmentation = segmenter.module.sample_segments(batch_images.shape[0])
+                    quaternions_per_domain, translations_per_domain = vae.module.decode(latent_variables)
+                    translation_per_residue = model.utils.compute_translations_per_residue(translations_per_domain, segmentation, base_structure.coord.shape[0], batch_size, gpu_id)
+                    predicted_structures, transformed_precision_matrices = model.utils.deform_structure(gmm_repr, translation_per_residue, quaternions_per_domain, segmentation, gpu_id)
+                    posed_predicted_structures, rotated_precisions = renderer.rotate_structure(predicted_structures,transformed_precision_matrices, batch_poses)
+                    predicted_images = renderer.project_non_diagonal_gaussian(posed_predicted_structures[:, :, :2], rotated_precisions[:, :, :2, :2], gmm_repr.amplitudes, grid)
+                    batch_predicted_images = renderer.apply_ctf(predicted_images, ctf, indexes)/dataset.f_std
+                    loss = compute_loss(batch_predicted_images, lp_batch_translated_images, None, latent_mean, latent_std, vae.module, segmenter.module, experiment_settings, tracking_metrics,
+                        structural_loss_parameters= structural_loss_parameters, epoch=epoch, predicted_structures=predicted_structures, device=gpu_id)
 
-            loss.backward()
-            optimizer.step()
-            optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
+                    optimizer.zero_grad()
 
-        if scheduler:
-            scheduler.step()
+                if scheduler:
+                    scheduler.step()
 
+                    break
+
+
+        break
         model.utils.monitor_training(segmentation, segmenter.module, tracking_metrics, experiment_settings, vae.module, optimizer, predicted_images, batch_images, gpu_id)
 
+    print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=100))
 
 def cryosphere_train():
     """
