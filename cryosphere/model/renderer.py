@@ -45,7 +45,7 @@ def project_non_diagonal_gaussian(Gauss_mean_2d, Gauss_precisions_2d, Gauss_ampl
     #exponential is a tensor of size (batch_size, N_residues, N_pix**2)
     print(torch.einsum("bapl, bapl -> bap", first_product, diff).shape)
     print(Gauss_amplitudes[None, :, None].shape)
-    exponential = torch.exp(-0.5*torch.einsum("bapl, bapl -> bap", first_product, diff))*Gauss_amplitudes[None, :, None]
+    exponential = torch.exp(-0.5*torch.einsum("bapl, bapl -> bap", first_product, diff))*Gauss_amplitudes[None, :, :]
     images = torch.einsum("bap -> bp", exponential)
     return images.reshape(batch_size, grid.side_n_pixels, grid.side_n_pixels)
 
