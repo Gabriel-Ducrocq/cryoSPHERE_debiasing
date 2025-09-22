@@ -39,6 +39,8 @@ def project_non_diagonal_gaussian(Gauss_mean_2d, Gauss_precisions_2d, Gauss_ampl
     """
     batch_size = Gauss_mean_2d.shape[0]
     plane_coord = grid.plane_coords
+    print(plane_coord.shape)
+    print(Gauss_mean_2d.shape)
     diff = (Gauss_mean_2d[:, :, None, :] - plane_coord[None, None, :, :])
     first_product = torch.einsum("bapk, bapkl ->bapl", diff, Gauss_precisions_2d)
     #exponential is a tensor of size (batch_size, N_residues, N_pix**2)
