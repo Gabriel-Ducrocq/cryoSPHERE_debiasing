@@ -36,6 +36,7 @@ class Gaussian_splatting(torch.nn.Module):
         self.quaternions = torch.zeros(self.mus.shape[0], 4, device=self.mus.get_device())
         self.quaternions[:, -1] = 1
         self.quaternions = torch.nn.Parameter(data= self.quaternions, requires_grad = True)
+        self.softp = torch.nn.Softplus()
 
     def compute_R(self):
         """
@@ -50,7 +51,7 @@ class Gaussian_splatting(torch.nn.Module):
         Return the diagonal elements of the S matrix
         return: torch.tensor(N_residues, 3)
         """
-        return self.S
+        return self.softp(self.S)
 
     def compute_precision_matrices(self):
         """
@@ -61,6 +62,12 @@ class Gaussian_splatting(torch.nn.Module):
         S = self.get_S()
         RS = R*S[:, None, :]
         return torch.einsum("rij, rlj -> ril", RS, RS)
+
+    def get_amplitudes(self):
+        """
+        Return the amplitudes, passed through a softplus
+        """
+        return self.softp(self.amplitudes)
 
 
 

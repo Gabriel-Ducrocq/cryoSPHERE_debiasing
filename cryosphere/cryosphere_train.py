@@ -74,7 +74,7 @@ def start_training(vae, image_translator, ctf, grid, gmm_repr, optimizer, datase
             print("Time to structure deformation", end - start)
             posed_predicted_structures, rotated_precisions = renderer.rotate_structure(predicted_structures,transformed_precision_matrices, batch_poses)
             start = time()
-            predicted_images = renderer.project_non_diagonal_gaussian(posed_predicted_structures[:, :, :2], rotated_precisions[:, :, :2, :2], gmm_repr.amplitudes, grid)
+            predicted_images = renderer.project_non_diagonal_gaussian(posed_predicted_structures[:, :, :2], rotated_precisions[:, :, :2, :2], gmm_repr.get_amplitudes(), grid)
             end = time()
             print("Time to projection", end - start)
             batch_predicted_images = renderer.apply_ctf(predicted_images, ctf, indexes)/dataset.f_std
