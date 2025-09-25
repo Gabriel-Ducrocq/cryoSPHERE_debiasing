@@ -122,6 +122,29 @@ def apply_ctf(images, ctf, indexes):
     ctf_corrupted = fourier2d_to_primal(fourier_images)
     return ctf_corrupted
 
+@torch.no_grad
+def get_ellipsis_radius(S, epsilon=0.1):
+    """
+    Computes the radius of the ellipsis
+    S: torch.tensor(N_residues, 3) of square roots of the lambda values.
+    """
+    return 3*torch.max(S[:, :2].clip(min=epsilon), dim=-1).ceil()
+
+@torch.no_grad
+def get_rectangle(center, radius, edge_coordinate):
+    """
+    Draws an axis aligned square around the ellipse
+    center: (N_residues, 2) center of the Gaussian
+    radius: (N_residues, 1) radius of circle
+    edge_coordinate: float, to what extent the grid goes (e.g -A, + A on both width and height)
+    """
+    rect_min = center - radius[:, None]
+    rect_max = center + radius[:, None]
+    rect_min[..., 0] = rect_min[..., 0].clip(-edge_coordinate, edge_coordinate)
+    rect_min[..., 1] = rect_min[..., 1].clip(-edge_coordinate, edge_coordinate)
+    rect_max[..., 0] = rect_max[..., 0].clip(-edge_coordinate, edge_coordinate)
+    rect_max[..., 1] = rect_max[..., 1].clip(-edge_coordinate, edge_coordinate)
+    return rect_min, rect_max
 
 
 
