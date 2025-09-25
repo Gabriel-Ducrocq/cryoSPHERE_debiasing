@@ -122,21 +122,27 @@ def apply_ctf(images, ctf, indexes):
     ctf_corrupted = fourier2d_to_primal(fourier_images)
     return ctf_corrupted
 
-@torch.no_grad
-def get_ellipsis_radius(S, epsilon=0.1):
+@torch.no_grad()
+def get_radius(cov2d):
     """
-    Computes the radius of the ellipsis
-    S: torch.tensor(N_residues, 3) of square roots of the lambda values.
+    Computes the eigenvalues of 2d symmetric positive definite matrices to obtain the radius of the ellipsis.
+    cov2d: torch.tensor(batch_size, N_residues, 2, 2) matrices
     """
-    return 3*torch.max(S[:, :2].clip(min=epsilon), dim=-1).ceil()
+    det = cov2d[:, 0, 0] * cov2d[:,1,1] - cov2d[:, 0, 1] * cov2d[:,1,0]
+    mid = 0.5 * (cov2d[:, 0,0] + cov2d[:,1,1])
+    lambda1 = mid + torch.sqrt((mid**2-det).clip(min=0.1))
+    lambda2 = mid - torch.sqrt((mid**2-det).clip(min=0.1))
+    return 3.0 * torch.sqrt(torch.max(lambda1, lambda2)).ceil()
 
 @torch.no_grad
 def get_rectangle(center, radius, edge_coordinate):
     """
     Draws an axis aligned square around the ellipse
-    center: (N_residues, 2) center of the Gaussian
-    radius: (N_residues, 1) radius of circle
+    center: (batch, size, N_residues, 2) center of the Gaussian
+    radius: (batch_size, N_residues, 1) radius of circle
     edge_coordinate: float, to what extent the grid goes (e.g -A, + A on both width and height)
+    return: torch.tensor(batch_size, N_residues, 2) tensor with the lower bounds of the rectangle along each axis.
+            torch.tensor(batch_size, N_residues, 2) tensor with the upper bounds of the rectangle along each axis.
     """
     rect_min = center - radius[:, None]
     rect_max = center + radius[:, None]
@@ -145,6 +151,25 @@ def get_rectangle(center, radius, edge_coordinate):
     rect_max[..., 0] = rect_max[..., 0].clip(-edge_coordinate, edge_coordinate)
     rect_max[..., 1] = rect_max[..., 1].clip(-edge_coordinate, edge_coordinate)
     return rect_min, rect_max
+
+
+@torch.no_grad
+def get_Gaussians_in_tile(rect, tile_size, grid):
+    """
+    Get the list of Gaussians in each tile
+    rect: torch.tensor(2, batch_size, N_residues, 2) tensor of lower and uppr bounds of each rectangle along each axis
+    tile_size: integer, size, in pixels, of the tiles of the tiles along each axis
+    grid: grid object containing the number of pixels, their size etc...
+    """
+    for h in range(0, grid.side_n_pixels, tile_size):
+        for w in range(0, grid.side_n_pixels, tile_size):
+            #For convenient, we change the coordinates from the EMAN2 grid coordinate to (0, Extent)
+            rect += grid.side_n_pixels
+            #
+            over_tl = rect[0][..., 0].clip(min=w), rect[0][..., 1].clip(min=h)
+            over_br = rect[1][..., 0].clip(max=w + tile_size - 1), rect[1][..., 1].clip(max=h + tile_size- 1)
+            in_mask = (over_br[0] > over_tl[0]) & (over_br[1] > over_tl[1])  # 3D gaussian in the tile
+
 
 
 

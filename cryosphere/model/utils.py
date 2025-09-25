@@ -448,7 +448,6 @@ def monitor_training(segmentation, segmenter, tracking_metrics, experiment_setti
             wandb.log({key: np.mean(val) for key, val in tracking_metrics.items() if key not in ignore})
             wandb.log({"epoch": tracking_metrics["epoch"]})
             wandb.log({"lr_segmentation":optimizer.param_groups[0]['lr']})
-            wandb.log({"lr":optimizer.param_groups[1]['lr']})
             for part, segm in segmentation.items():
                 hard_segments = np.argmax(segm["segmentation"].detach().cpu().numpy(), axis=-1)
                 for l in range(segm["segmentation"].shape[-1]):
