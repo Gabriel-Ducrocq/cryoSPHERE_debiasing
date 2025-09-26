@@ -4,9 +4,6 @@ import numpy as np
 from typing import Union
 from dataclasses import dataclass
 
-from pytorch3d.datasets.r2n2.utils import voxelize
-
-
 @dataclass
 class Gaussian:
     mus: Union[torch.Tensor, np.ndarray]
