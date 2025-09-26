@@ -3,6 +3,7 @@ import einops
 import numpy as np
 from time import time
 import matplotlib.pyplot as plt
+from datashader.tiles import tile_previewer
 
 
 def primal_to_fourier2d(images):
@@ -154,21 +155,56 @@ def get_rectangle(center, radius, edge_coordinate):
 
 
 @torch.no_grad
-def get_Gaussians_in_tile(rect, tile_size, grid):
+def get_Gaussians_in_tile(gauss_means_2D, gauss_precision_2D, gauss_amplitudes, rect, tile_size, grid):
     """
     Get the list of Gaussians in each tile
+    gauss_means_2D: torch.tensor(batch_size, N_residues, 2)
+    gauss_precision_2D: torch.tensor(batch_size, N_residues, 2, 2) precision matrices
+    gauss_amplitudes: torch.tensor(N_residues)
     rect: torch.tensor(2, batch_size, N_residues, 2) tensor of lower and uppr bounds of each rectangle along each axis
     tile_size: integer, size, in pixels, of the tiles of the tiles along each axis
     grid: grid object containing the number of pixels, their size etc...
     """
+    batch_size = gauss_means_2D.shape[0]
+    images = torch.zeros(batch_size, grid.side_n_pixels, grid.side_n_pixels)
     for h in range(0, grid.side_n_pixels, tile_size):
         for w in range(0, grid.side_n_pixels, tile_size):
+            ######### !!!!!!!!!!! I HAVE TO DEFINE THINGS BETTER: THE CLIPPING SHOULD HAPPEN IN COORDINATE NOT IN
+            ######### NUMBER OF PIXELS AS ONE PIXEL IS NOT 1 Å !!!!!!!!!
             #For convenient, we change the coordinates from the EMAN2 grid coordinate to (0, Extent)
             rect += grid.side_n_pixels
-            #
+            #We first set the lower and upper bounds of the rectangle to min(lower_bound_tile, lower_bound_rect) and
+            # max(upper_bound_tile, upper_bound_rect)
             over_tl = rect[0][..., 0].clip(min=w), rect[0][..., 1].clip(min=h)
             over_br = rect[1][..., 0].clip(max=w + tile_size - 1), rect[1][..., 1].clip(max=h + tile_size- 1)
+            #Then, if this upper bound is strictly superior to this lower bound for each axis, it means the rectangle
+            #overlaps with the tile.
+            #in_maks is a tensor of shape (batch_size, N_residues)
             in_mask = (over_br[0] > over_tl[0]) & (over_br[1] > over_tl[1])  # 3D gaussian in the tile
+
+            #If the number of Gaussian overlapping the tile is 0, we directly pass to the next tile
+            if not in_mask.sum() > 0:
+                continue
+
+            #tile_coords is torch.tensor(N_pix_in_tile, 2)
+            tile_coords = grid.image_format_plane_coord[h:h+tile_size, w:w+tile_size].reshape(-1, 2)
+            diff = gauss_means_2D[:, None, :, :] - tile_coords[None, :, None, :]
+            #We multiply the contribution of each residues by an indicator function of weather it is in the tile or not and sum over the residues.
+            exponent = torch.exp(-0.5*torch.einsum("bprl, brlk, bprk -> bpr", diff, gauss_precision_2D, diff))*gauss_amplitudes[None, None, :]
+            #tile_projection is torch.tensor(batch_size, tile_size, tile_size)
+            tile_projection = torch.einsum("b p r, b r -> bp", exponent, in_mask).reshape(batch_size, tile_size, tile_size)
+            images[:, h:h+tile_size, w:w+tile_size] = tile_projection
+
+
+    return images
+
+
+
+
+
+
+
+
 
 
 
