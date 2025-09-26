@@ -3,7 +3,6 @@ import einops
 import numpy as np
 from time import time
 import matplotlib.pyplot as plt
-from datashader.tiles import tile_previewer
 
 
 def primal_to_fourier2d(images):
